@@ -20,8 +20,8 @@ void print_usage()
         << "Commands:\n"
         << "  inspect <path>\n"
         << "  index   <path> [output.json]\n"
-        << "  verify  <path> [--mode metadata|structural|file|module|full|comparator] [--target NAME] [--report run.json]\n"
-        << "  simulate [output-dir] [--nx N --ny N --dt T --steps N --viscosity V]\n";
+        << "  verify  <path> [--mode metadata|structural|file|module|full|comparator-preflight|comparator] [--target NAME] [--report run.json]\n"
+        << "  simulate [output-dir] [--nx N --ny N --dt T --steps N --viscosity V --checkpoint-every N --restart FILE --stop-after N]\n";
 }
 
 int command_simulate(int argc, char* argv[])
@@ -42,6 +42,9 @@ int command_simulate(int argc, char* argv[])
         else if (option == "--ny") config.ny = std::stoull(need_value(option));
         else if (option == "--steps") config.steps = std::stoull(need_value(option));
         else if (option == "--output-every") config.output_every = std::stoull(need_value(option));
+        else if (option == "--checkpoint-every") config.checkpoint_every = std::stoull(need_value(option));
+        else if (option == "--stop-after") config.stop_after_step = std::stoull(need_value(option));
+        else if (option == "--restart") config.restart_from = need_value(option);
         else if (option == "--dt") config.dt = std::stod(need_value(option));
         else if (option == "--lx") config.length_x = std::stod(need_value(option));
         else if (option == "--ly") config.length_y = std::stod(need_value(option));

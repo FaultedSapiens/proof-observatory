@@ -76,6 +76,7 @@ add_test(NAME process_runner_test COMMAND process_runner_test)
 
 add_executable(simulation_test tests/simulation_test.cpp src/simulation.cpp)
 target_include_directories(simulation_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(simulation_test PRIVATE yaml-cpp::yaml-cpp)
 add_test(NAME simulation_test COMMAND simulation_test)
 
 add_executable(lean_indexer_test
@@ -86,3 +87,21 @@ add_executable(lean_indexer_test
 )
 target_include_directories(lean_indexer_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_test(NAME lean_indexer_test COMMAND lean_indexer_test)
+
+add_executable(verification_status_test tests/verification_status_test.cpp)
+target_include_directories(verification_status_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_test(NAME verification_status_test COMMAND verification_status_test)
+
+add_executable(comparator_environment_test tests/comparator_environment_test.cpp)
+target_include_directories(comparator_environment_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_test(NAME comparator_environment_test COMMAND comparator_environment_test)
+
+add_executable(snapshot_test
+    tests/snapshot_test.cpp
+    src/snapshot.cpp
+    src/lean_indexer.cpp
+    src/artifact_stage.cpp
+    src/process.cpp
+)
+target_include_directories(snapshot_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_test(NAME snapshot_test COMMAND snapshot_test)

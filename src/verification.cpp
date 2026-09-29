@@ -1,6 +1,7 @@
 #include "verification.hpp"
 
 #include "artifact_stage.hpp"
+#include "comparator_environment.hpp"
 #include "formalization.hpp"
 #include "lean_indexer.hpp"
 #include "process.hpp"
@@ -51,10 +52,15 @@ std::string shell_quote(std::string_view value)
     return result + "'";
 }
 
-std::string quote_command_argument(std::string_view value, const fs::path& root)
+bool is_wsl_unc_path(const fs::path& root)
 {
     const std::string root_text = root.string();
-    if (root_text.rfind("\\\\wsl.localhost\\", 0) == 0 || root_text.rfind("\\\\wsl$\\", 0) == 0)
+    return root_text.rfind("\\\\wsl.localhost\\", 0) == 0 || root_text.rfind("\\\\wsl$\\", 0) == 0;
+}
+
+std::string quote_command_argument(std::string_view value, const fs::path& root)
+{
+    if (is_wsl_unc_path(root))
         return shell_quote(value);
     std::string quoted = "\"";
     for (const char c : value)
@@ -101,6 +107,19 @@ std::string read_file(const fs::path& path)
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
+std::string comparator_failure_from_commands(const std::vector<CommandEvidence>& commands)
+{
+    for (const auto& item : commands)
+    {
+        if (item.result.exit_code == 0) continue;
+        if (item.command.find("lake exe comparator ") != std::string::npos)
+            return std::string(classify_comparator_failure(item.result.output, item.result.error_output));
+        if (item.command.find("ComparatorChallenges") != std::string::npos)
+            return "configuration_listing_error";
+    }
+    return "none";
+}
+
 void write_report(const fs::path& report_path, const fs::path& root, const VerificationOptions& options,
                   const std::string& commit, const std::string& status, const std::string& toolchain,
                   const std::string& repository_url, const std::string& file_hashes,
@@ -108,16 +127,22 @@ void write_report(const fs::path& report_path, const fs::path& root, const Verif
                   const std::vector<CommandEvidence>& commands,
                   int action_exit, const LeanIndex* index, const Formalization* formalization)
 {
+    const std::string comparator_failure = comparator_failure_from_commands(commands);
     std::ofstream out(report_path, std::ios::binary);
     if (!out) throw std::runtime_error("Cannot create verification report: " + report_path.string());
     out << "{\n  \"schema\": \"proof-observatory.verification.v2\",\n"
         << "  \"started_at_utc\": " << json(started_at) << ",\n"
         << "  \"mode\": " << json(options.mode) << ",\n"
         << "  \"report_path\": " << json(fs::absolute(report_path).string()) << ",\n"
+        << "  \"verification_class\": " << json(verification_class_for_mode(options.mode)) << ",\n"
         << "  \"evidence_type\": " << json(options.mode == "full" ? "full_lake_build" :
             options.mode == "module" || options.mode == "file" ? "targeted_lean_check" :
+            options.mode == "comparator-preflight" ? "comparator_environment_preflight" :
             options.mode == "comparator" ? "comparator_run" :
             options.mode == "structural" ? "heuristic_structural_analysis" : "metadata_provenance") << ",\n"
+        << "  \"comparator_status\": " << (options.mode == "comparator" ? json(comparator_status_for_exit(action_exit)) : "null") << ",\n"
+        << "  \"comparator_failure_class\": " << (options.mode == "comparator" ? json(comparator_failure) : "null") << ",\n"
+        << "  \"comparator_export_cache_status\": " << (options.mode == "comparator" ? json("unsupported_by_pinned_comparator") : "null") << ",\n"
         << "  \"interpretation\": \"Compilation establishes Lean acceptance of the checked inputs under this environment; it does not independently establish mathematical correctness. Comparator results are evidence from the named Comparator configuration only.\",\n"
         << "  \"artifact\": {\n    \"root\": " << json(root.string()) << ",\n"
         << "    \"repository_identity\": " << json(repository_url.empty() ? "unavailable" : repository_url) << ",\n"
@@ -146,7 +171,8 @@ void write_report(const fs::path& report_path, const fs::path& root, const Verif
         << "  \"checked_scope\": " << json(options.mode == "full" ? "all Lake default targets" :
               options.mode == "module" || options.mode == "file" ? "one Lean source file; imports resolved by the pinned Lake environment" :
               options.mode == "structural" ? "source-text structural index; no Lean compilation performed" :
-              options.mode == "comparator" ? "Comparator configurations present in ComparatorChallenges" : "repository metadata only") << ",\n"
+              options.mode == "comparator" ? "Comparator configurations present in ComparatorChallenges" :
+              options.mode == "comparator-preflight" ? "WSL Comparator helper resolution and Lake LEAN_PATH" : "repository metadata only") << ",\n"
         << "  \"limitations\": [\"Numerical simulation is not proof evidence.\", \"Lexical dependency candidates are not elaborated Lean dependencies.\"]";
     if (index)
     {
@@ -183,12 +209,14 @@ int run_verification(const fs::path& artifact_root, const VerificationOptions& o
     const std::string started_at = utc_now();
     const fs::path root = fs::absolute(normalize_wsl_unc_path(artifact_root));
     if (options.mode != "metadata" && options.mode != "structural" && options.mode != "file" &&
-        options.mode != "module" && options.mode != "full" && options.mode != "comparator")
-        throw std::invalid_argument("verify mode must be metadata, structural, file, module, full, or comparator");
+        options.mode != "module" && options.mode != "full" && options.mode != "comparator" &&
+        options.mode != "comparator-preflight")
+        throw std::invalid_argument("verify mode must be metadata, structural, file, module, full, comparator-preflight, or comparator");
     if ((options.mode == "file" || options.mode == "module") && options.target.empty())
         throw std::invalid_argument("verify mode " + options.mode + " requires --target");
     const bool has_lakefile = fs::exists(root / "lakefile.toml");
-    if ((options.mode == "file" || options.mode == "module" || options.mode == "full" || options.mode == "comparator") && !has_lakefile)
+    if ((options.mode == "file" || options.mode == "module" || options.mode == "full" ||
+         options.mode == "comparator" || options.mode == "comparator-preflight") && !has_lakefile)
         throw std::runtime_error("No lakefile.toml found in artifact: " + root.string());
 
     std::vector<CommandEvidence> commands;
@@ -248,8 +276,25 @@ int run_verification(const fs::path& artifact_root, const VerificationOptions& o
         if (!fs::exists(root / relative)) throw std::runtime_error("Lean target does not exist: " + target);
         action_exit = run("lake env lean " + quote_command_argument(target, root)).result.exit_code;
     }
+    else if (options.mode == "comparator-preflight")
+    {
+        if (!is_wsl_unc_path(root))
+            throw std::invalid_argument("comparator-preflight currently requires a WSL UNC artifact path");
+        const std::string lake_path_check =
+            "lake_path=\"$(lake env printenv LEAN_PATH)\" || exit $?; "
+            "case \":$lake_path:\" in *\":$PWD/.lake/build/lib/lean:\"*) "
+            "printf 'Lake LEAN_PATH contains the artifact build library.\\n';; "
+            "*) printf 'COMPARATOR_ENVIRONMENT_ERROR: Lake LEAN_PATH lacks the artifact build library.\\n' >&2; exit 125;; esac";
+        const std::string command = (is_wsl_unc_path(root) ?
+            std::string(comparator_tool_environment_setup) + "\n" : std::string{}) + lake_path_check;
+        action_exit = run(command).result.exit_code;
+    }
     else if (options.mode == "comparator")
     {
+        // `lake exe` is intentional: Comparator's sandbox forwards LEAN_PATH
+        // from its parent process to lean4export. Invoking its binary directly
+        // loses Lake's package search path and can fail with an unknown module
+        // prefix before export begins.
         const auto listing = run("find ComparatorChallenges -maxdepth 1 -type f -name '*.json' -print 2>/dev/null | sort");
         if (listing.result.exit_code != 0) action_exit = listing.result.exit_code;
         else
@@ -261,7 +306,10 @@ int run_verification(const fs::path& artifact_root, const VerificationOptions& o
             {
                 if (config.empty()) continue;
                 found = true;
-                const auto& result = run("lake exe comparator " + quote_command_argument(config, root));
+                const std::string command = (is_wsl_unc_path(root) ?
+                    std::string(comparator_tool_environment_setup) + "\n" : std::string{}) +
+                    "lake exe comparator " + quote_command_argument(config, root);
+                const auto& result = run(command);
                 if (result.result.exit_code != 0) action_exit = result.result.exit_code;
             }
             if (!found) throw std::runtime_error("No Comparator JSON configurations found in ComparatorChallenges/");

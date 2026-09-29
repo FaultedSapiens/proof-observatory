@@ -33,7 +33,7 @@ proof-observatory simulate [output-dir] [simulation options]
 | `file` | Runs `lake env lean <file>` | Lean acceptance for the requested source file and its imports |
 | `module` | Maps a dotted Lean module name to its source file, then runs `lake env lean <file>` | Lean acceptance for the requested module source and its imports |
 | `full` | Runs `lake build` | Full Lake build evidence |
-| `comparator` | Runs `lake exe comparator <config>` for each JSON file in `ComparatorChallenges/` | Results from each recorded Comparator invocation |
+| `comparator` | Runs `lake exe comparator <config>` for each JSON file in `ComparatorChallenges/` | Independent Comparator verification results |
 
 Examples:
 
@@ -43,14 +43,69 @@ proof-observatory verify <artifact> --mode structural --report structure.json
 proof-observatory verify <artifact> --mode module --target NavierStokes.ComparatorSolution
 proof-observatory verify <artifact> --mode file --target NavierStokes/ComparatorSolution.lean
 proof-observatory verify <artifact> --mode full --report full-build.json
+proof-observatory verify <artifact> --mode comparator-preflight --report comparator-preflight.json
 proof-observatory verify <artifact> --mode comparator --report comparator.json
 ```
 
 Reports capture the input commit and dirty state, toolchain pin, environment,
-commands, stdout/stderr, duration, exit status, and generated report path. A
-successful Lean invocation means Lean accepted the checked inputs in that
-environment; it is not independent mathematical validation. Comparator success
-is evidence from that Comparator run and configuration.
+commands, stdout/stderr, duration, exit status, and generated report path. They
+also identify the verification class (`metadata_provenance`,
+`structural_source_analysis`, `lean_kernel_compilation`, or
+`comparator_independent_verification`). Comparator reports include
+`comparator_status: "verified"` or `"failed"`. A successful Lean invocation
+means Lean accepted the checked inputs in that environment; it is not
+independent mathematical validation. Comparator success is evidence from that
+Comparator run and configuration. `comparator_export_cache_status` records
+whether the selected pinned Comparator supports export reuse. Comparator
+failures are additionally classified as tool environment, project build,
+export, configuration, or Comparator rejection/error so setup failures are not
+reported as failed proofs.
+
+## Comparator and export cost
+
+For the pinned Comparator used by the Navier–Stokes and Euler artifact,
+`lake exe comparator <config>` is the supported invocation. The `lake exe`
+wrapper matters: Comparator forwards its process `LEAN_PATH` to `lean4export`,
+so invoking the Comparator binary directly can lose the artifact's Lake package
+paths and fail with `unknown module prefix 'ComparatorChallenges'`.
+
+For WSL artifacts, Observatory resolves `landrun` and `lean4export` inside the
+artifact's WSL login shell. Explicit `COMPARATOR_LANDRUN` and
+`COMPARATOR_LEAN4EXPORT` settings take precedence; otherwise Observatory
+resolves them from that shell's `PATH` and the conventional Go install/bin
+locations for the pinned tools. It prepends the resolved executable
+directories to `PATH`, which is the environment Comparator preserves inside
+Landrun, and records the resolved paths in command output. No machine-specific
+binary paths are embedded in Observatory.
+
+Run `--mode comparator-preflight` before a costly Comparator run to check that
+both helper executables resolve and that Lake's `LEAN_PATH` includes the
+artifact's `.lake/build/lib/lean`. This check does not build the project or run
+Comparator.
+
+Comparator's pinned implementation incrementally builds each configured module
+with Lake, exports only its configured theorem/definition targets plus the
+required primitive declarations, then parses both exports and compares/replays
+them in the same invocation. Existing `.olean` outputs let Lake replay cached
+build jobs instead of recompiling the project. However, this Comparator version
+does not persist or accept NDJSON exports, expose a separate compare-from-export
+stage, or provide an export cache. It regenerates challenge and solution exports
+on every Comparator invocation. Therefore there is no safe pre-generated export
+cache that this pinned binary can consume, and the first (and every later)
+Comparator run can spend substantial time exporting this large project. A
+completed Comparator report records an actual run; structural, metadata, and
+numerical reports are not substitutes for it.
+
+To run the pinned artifact with its Lake-managed environment:
+
+```powershell
+proof-observatory verify \\wsl.localhost\Ubuntu\home\yash\projects\NavierStokesAndEuler --mode comparator --report comparator.json
+```
+
+The command may replay cached Lake outputs, but it still performs both exports.
+Do not use a direct Comparator binary invocation as a shortcut. The project
+report's `comparator_status` only says whether the Comparator process exited
+successfully; inspect its command output for the detailed run evidence.
 
 Structural dependency candidates are marked `lexical_heuristic`. They are not
 Lean elaborator dependencies. Lexical `sorry` and `axiom` token counts include

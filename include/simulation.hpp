@@ -15,12 +15,15 @@ struct SimulationConfig
     double viscosity = 0.01;
     double forcing_amplitude = 0.0;
     std::size_t output_every = 100;
+    std::size_t checkpoint_every = 0;
+    std::size_t stop_after_step = 0;
     std::size_t poisson_iterations = 1200;
     double poisson_tolerance = 1e-8;
     std::string initial_condition = "gaussian";
     std::string advection_scheme = "upwind";
     std::string time_scheme = "rk2";
     std::string boundary = "periodic";
+    std::filesystem::path restart_from;
 };
 
 int run_simulation(const SimulationConfig& config, const std::filesystem::path& output_dir);

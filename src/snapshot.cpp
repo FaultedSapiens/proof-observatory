@@ -148,6 +148,44 @@ void write_snapshot_json(
         << "\n"
         << "  },\n";
 
+    // These entries come from the artifact's authoritative formalization.yaml.
+    // They are metadata claims and alignments, not independently validated
+    // mathematical statements. Lean/Comparator evidence is recorded separately.
+    out << "  \"claims\": [\n";
+    for (std::size_t i = 0; i < formalization.main_results.size(); ++i)
+    {
+        const auto& claim = formalization.main_results[i];
+        out << "    {\n"
+            << "      \"id\": " << quote("formalization.main_results." + std::to_string(i)) << ",\n"
+            << "      \"description\": " << quote(claim.description) << ",\n"
+            << "      \"declaration\": " << quote(claim.declaration) << ",\n"
+            << "      \"file\": " << quote(claim.file.generic_string()) << ",\n"
+            << "      \"metadata_sorry_count\": " << claim.sorry_count << ",\n"
+            << "      \"metadata_axioms\": [";
+        for (std::size_t j = 0; j < claim.axioms.size(); ++j)
+        {
+            if (j) out << ", ";
+            out << quote(claim.axioms[j]);
+        }
+        out << "],\n"
+            << "      \"evidence\": \"formalization_yaml_metadata\",\n"
+            << "      \"verification_status\": \"not_asserted_by_structural_snapshot\"\n"
+            << "    }" << (i + 1 < formalization.main_results.size() ? ",\n" : "\n");
+    }
+    out << "  ],\n  \"alignments\": [\n";
+    for (std::size_t i = 0; i < formalization.alignments.size(); ++i)
+    {
+        const auto& alignment = formalization.alignments[i];
+        out << "    {\n"
+            << "      \"source_statement\": " << quote(alignment.source) << ",\n"
+            << "      \"lean_declaration\": " << quote(alignment.lean) << ",\n"
+            << "      \"module\": " << quote(alignment.module) << ",\n"
+            << "      \"status\": " << quote(alignment.status) << ",\n"
+            << "      \"evidence\": \"formalization_yaml_alignment_metadata\"\n"
+            << "    }" << (i + 1 < formalization.alignments.size() ? ",\n" : "\n");
+    }
+    out << "  ],\n";
+
     out
         << "  \"statistics\": {\n"
         << "    \"lean_files\": "
