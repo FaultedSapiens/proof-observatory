@@ -2,9 +2,12 @@
 #include "inspector.hpp"
 #include "lean_indexer.hpp"
 #include "snapshot.hpp"
+#include "verification.hpp"
+#include "simulation.hpp"
 
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -16,9 +19,42 @@ void print_usage()
         << "Proof Observatory\n\n"
         << "Commands:\n"
         << "  inspect <path>\n"
-        << "  index   <path> [output.json]\n";
+        << "  index   <path> [output.json]\n"
+        << "  verify  <path> [--mode metadata|structural|file|module|full|comparator] [--target NAME] [--report run.json]\n"
+        << "  simulate [output-dir] [--nx N --ny N --dt T --steps N --viscosity V]\n";
 }
 
+int command_simulate(int argc, char* argv[])
+{
+    SimulationConfig config;
+    fs::path output = "simulation-output";
+    int i = 2;
+    if (i < argc && std::string(argv[i]).rfind("--", 0) != 0) output = argv[i++];
+    auto need_value = [&](const std::string& option) -> std::string {
+        if (i + 1 >= argc) throw std::invalid_argument("missing value for " + option);
+        ++i;
+        return argv[i];
+    };
+    for (; i < argc; ++i)
+    {
+        const std::string option = argv[i];
+        if (option == "--nx") config.nx = std::stoull(need_value(option));
+        else if (option == "--ny") config.ny = std::stoull(need_value(option));
+        else if (option == "--steps") config.steps = std::stoull(need_value(option));
+        else if (option == "--output-every") config.output_every = std::stoull(need_value(option));
+        else if (option == "--dt") config.dt = std::stod(need_value(option));
+        else if (option == "--lx") config.length_x = std::stod(need_value(option));
+        else if (option == "--ly") config.length_y = std::stod(need_value(option));
+        else if (option == "--viscosity") config.viscosity = std::stod(need_value(option));
+        else if (option == "--forcing") config.forcing_amplitude = std::stod(need_value(option));
+        else if (option == "--initial") config.initial_condition = need_value(option);
+        else if (option == "--advection") config.advection_scheme = need_value(option);
+        else if (option == "--time-scheme") config.time_scheme = need_value(option);
+        else if (option == "--boundary") config.boundary = need_value(option);
+        else throw std::invalid_argument("unknown simulate option: " + option);
+    }
+    return run_simulation(config, output);
+}
 
 void print_inspection(
     const ArtifactInfo& artifact)
@@ -190,11 +226,9 @@ int command_inspect(
         return 0;
     }
 
-    Formalization formalization =
-        parse_formalization(
-            artifact.root /
-            "formalization.yaml"
-        );
+    Formalization formalization;
+    if (artifact.has_formalization)
+        formalization = parse_formalization(artifact.root / "formalization.yaml");
 
     std::cout
         << "\nFormalization\n"
@@ -252,11 +286,9 @@ int command_index(
     ArtifactInfo artifact =
         inspect_artifact(root);
 
-    Formalization formalization =
-        parse_formalization(
-            artifact.root /
-            "formalization.yaml"
-        );
+    Formalization formalization;
+    if (artifact.has_formalization)
+        formalization = parse_formalization(artifact.root / "formalization.yaml");
 
     LeanIndex index =
         build_lean_index(root);
@@ -294,7 +326,7 @@ int main(
 {
     try
     {
-        if (argc < 3)
+        if (argc < 2)
         {
             print_usage();
             return 1;
@@ -302,6 +334,14 @@ int main(
 
         const std::string command =
             argv[1];
+
+        if (command == "simulate") return command_simulate(argc, argv);
+
+        if (argc < 3)
+        {
+            print_usage();
+            return 1;
+        }
 
         const fs::path root =
             argv[2];
@@ -324,6 +364,29 @@ int main(
                 root,
                 output
             );
+        }
+
+        if (command == "verify")
+        {
+            VerificationOptions options;
+            for (int i = 3; i < argc; ++i)
+            {
+                const std::string option = argv[i];
+                if (option == "--mode" || option == "--target" || option == "--report")
+                {
+                    if (++i >= argc) throw std::invalid_argument("missing value for " + option);
+                    if (option == "--mode") options.mode = argv[i];
+                    else if (option == "--target") options.target = argv[i];
+                    else options.report_path = argv[i];
+                }
+                else if (!option.empty() && option[0] != '-')
+                {
+                    // Preserve the legacy positional report path.
+                    options.report_path = option;
+                }
+                else throw std::invalid_argument("unknown verify option: " + option);
+            }
+            return run_verification(root, options);
         }
 
         print_usage();

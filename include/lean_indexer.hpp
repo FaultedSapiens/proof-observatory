@@ -19,6 +19,7 @@ enum class DeclarationKind
     class_,
     inductive,
     instance_,
+    axiom,
     unknown
 };
 
@@ -49,6 +50,8 @@ struct LeanFile
     std::size_t lines = 0;
 
     std::uint64_t fingerprint = 0;
+    std::size_t lexical_sorry_occurrences = 0;
+    std::size_t lexical_axiom_occurrences = 0;
 
     std::vector<LeanImport> imports;
     std::vector<std::size_t> declaration_ids;
@@ -62,6 +65,7 @@ struct DependencyEdge
     std::string symbol;
 
     bool same_file = false;
+    std::string evidence = "lexical_heuristic";
 };
 
 struct LeanIndex
@@ -71,6 +75,8 @@ struct LeanIndex
     std::vector<LeanFile> files;
     std::vector<LeanDeclaration> declarations;
     std::vector<DependencyEdge> dependencies;
+    std::size_t lexical_sorry_occurrences = 0;
+    std::size_t lexical_axiom_occurrences = 0;
 
     std::unordered_map<
         std::string,

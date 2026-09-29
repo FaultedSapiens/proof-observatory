@@ -193,6 +193,8 @@ void write_snapshot_json(
             )
             << ",\n";
 
+        out << "      \"fingerprint_algorithm\": \"FNV-1a-64 (non-cryptographic)\",\n";
+
         out
             << "      \"imports\": [";
 
@@ -212,6 +214,7 @@ void write_snapshot_json(
                 << ", "
                 << "\"line\": "
                 << file.imports[j].line
+                << ", \"evidence\": \"lexical_import_statement\""
                 << "}";
         }
 
@@ -334,7 +337,11 @@ void write_snapshot_json(
                     ? "true"
                     : "false"
             )
-            << "\n"
+            << ",\n"
+            << "      \"evidence\": "
+            << quote(edge.evidence)
+            << ",\n"
+            << "      \"semantic_status\": \"candidate_only\"\n"
             << "    }";
 
         if (
@@ -357,7 +364,7 @@ void write_snapshot_json(
         << ",\n"
         << "    "
         << quote(
-            "Dependency edges are heuristic lexical candidates, not Lean elaborator dependencies."
+            "Dependency edges have lexical_heuristic evidence and are candidates, not Lean elaborator dependencies."
         )
         << ",\n"
         << "    "

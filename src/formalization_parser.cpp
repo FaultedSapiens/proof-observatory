@@ -105,12 +105,12 @@ Formalization parse_formalization(
             ? root["alignment"]
             : YAML::Node();
 
+    const YAML::Node selected_alignment =
+        !top_level_alignment.IsNull() ? top_level_alignment : review_alignment;
     const YAML::Node alignment_nodes =
-        !top_level_alignment.IsNull()
-            ? (top_level_alignment["statements"]
-                   ? top_level_alignment["statements"]
-                   : top_level_alignment)
-            : review_alignment;
+        selected_alignment.IsMap() && selected_alignment["statements"]
+            ? selected_alignment["statements"]
+            : selected_alignment;
 
     if (!alignment_nodes.IsNull())
     {

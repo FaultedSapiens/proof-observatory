@@ -44,6 +44,18 @@ alignment:
       lean: "NavierStokes.Comparator.navier_stokes_breakdown_R3"
       module: "NavierStokes.ComparatorSolution"
       status: "proved"
+    - source: "Corollary 10.6 (periodic Navier–Stokes)"
+      lean: "NavierStokes.Comparator.navier_stokes_breakdown_periodic"
+      module: "NavierStokes.ComparatorSolution"
+      status: "proved"
+    - source: "Theorem 1.1 (Euler)"
+      lean: "Euler.euler_breakdown_R3"
+      module: "Euler.Solution"
+      status: "proved"
+    - source: "Theorem 1.1 (Euler), alternate version"
+      lean: "Euler.exists_compact_smooth_euler_singularity"
+      module: "Euler.Solution"
+      status: "proved"
 )YAML";
 
     std::ofstream out(yaml_path);
@@ -70,7 +82,7 @@ alignment:
         return 1;
     }
 
-    if (formalization.alignments.size() != 1)
+    if (formalization.alignments.size() != 4)
     {
         std::cerr << "alignment mismatch\n";
         return 1;
@@ -79,6 +91,13 @@ alignment:
     if (formalization.alignments[0].lean != "NavierStokes.Comparator.navier_stokes_breakdown_R3")
     {
         std::cerr << "alignment declaration mismatch\n";
+        return 1;
+    }
+
+    if (formalization.alignments[3].module != "Euler.Solution" ||
+        formalization.alignments[3].status != "proved")
+    {
+        std::cerr << "alignment module/status mismatch\n";
         return 1;
     }
 
